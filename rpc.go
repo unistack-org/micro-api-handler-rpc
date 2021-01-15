@@ -1,4 +1,4 @@
-// Package rpc is a go-micro rpc handler.
+// Package rpc is a micro rpc handler.
 package rpc
 
 import (
@@ -7,22 +7,23 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
-	"github.com/micro/go-micro/v3/api"
-	"github.com/micro/go-micro/v3/api/handler"
-	"github.com/micro/go-micro/v3/api/internal/proto"
-	"github.com/micro/go-micro/v3/client"
-	"github.com/micro/go-micro/v3/codec"
-	"github.com/micro/go-micro/v3/codec/jsonrpc"
-	"github.com/micro/go-micro/v3/codec/protorpc"
-	"github.com/micro/go-micro/v3/errors"
-	"github.com/micro/go-micro/v3/logger"
-	"github.com/micro/go-micro/v3/metadata"
-	"github.com/micro/go-micro/v3/util/ctx"
-	"github.com/micro/go-micro/v3/util/qson"
-	"github.com/micro/go-micro/v3/util/router"
 	"github.com/oxtoacart/bpool"
+
+	//	jsonrpc "github.com/unistack-org/micro-codec-jsonrpc"
+	//	protorpc "github.com/unistack-org/micro-codec-protorpc"
+	"github.com/unistack-org/micro/v3/api"
+	"github.com/unistack-org/micro/v3/api/handler"
+	"github.com/unistack-org/micro/v3/client"
+	"github.com/unistack-org/micro/v3/codec"
+	"github.com/unistack-org/micro/v3/errors"
+	"github.com/unistack-org/micro/v3/logger"
+	"github.com/unistack-org/micro/v3/metadata"
+	"github.com/unistack-org/micro/v3/util/ctx"
+	"github.com/unistack-org/micro/v3/util/qson"
+	"github.com/unistack-org/micro/v3/util/router"
 )
 
 const (
@@ -34,7 +35,7 @@ var (
 	jsonCodecs = []string{
 		"application/grpc+json",
 		"application/json",
-		"application/json-rpc",
+		//	"application/json-rpc",
 	}
 
 	// support proto codecs
@@ -43,8 +44,8 @@ var (
 		"application/grpc+proto",
 		"application/proto",
 		"application/protobuf",
-		"application/proto-rpc",
-		"application/octet-stream",
+		//	"application/proto-rpc",
+		//	"application/octet-stream",
 	}
 
 	bufferPool = bpool.NewSizedBufferPool(1024, 8)
@@ -113,7 +114,14 @@ func (h *rpcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create custom router
-	callOpt := client.WithRouter(router.New(service.Services))
+	callOpts := []client.CallOption{client.WithRouter(router.New(service.Services))}
+
+	if t := r.Header.Get("Timeout"); t != "" {
+		// assume timeout integer seconds now
+		if td, err := time.ParseDuration(t + "s"); err == nil {
+			callOpts = append(callOpts, client.WithRequestTimeout(td))
+		}
+	}
 
 	// walk the standard call path
 	// get payload
@@ -128,14 +136,14 @@ func (h *rpcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	// proto codecs
 	case hasCodec(ct, protoCodecs):
-		request := &proto.Message{}
+		request := &codec.Frame{}
 		// if the extracted payload isn't empty lets use it
 		if len(br) > 0 {
-			request = proto.NewMessage(br)
+			request.Data = br
 		}
 
 		// create request/response
-		response := &proto.Message{}
+		response := &codec.Frame{}
 
 		req := c.NewRequest(
 			service.Name,
@@ -145,17 +153,12 @@ func (h *rpcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 
 		// make the call
-		if err := c.Call(cx, req, response, callOpt); err != nil {
+		if err := c.Call(cx, req, response, callOpts...); err != nil {
 			writeError(w, r, err)
 			return
 		}
 
-		// marshall response
-		rsp, err = response.Marshal()
-		if err != nil {
-			writeError(w, r, err)
-			return
-		}
+		rsp = response.Data
 
 	default:
 		// if json codec is not present set to json
@@ -180,7 +183,7 @@ func (h *rpcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			client.WithContentType(ct),
 		)
 		// make the call
-		if err := c.Call(cx, req, &response, callOpt); err != nil {
+		if err := c.Call(cx, req, &response, callOpts...); err != nil {
 			writeError(w, r, err)
 			return
 		}
@@ -221,39 +224,45 @@ func requestPayload(r *http.Request) ([]byte, error) {
 
 	ct := r.Header.Get("Content-Type")
 	switch {
-	case strings.Contains(ct, "application/json-rpc"):
-		msg := codec.Message{
-			Type:   codec.Request,
-			Header: make(map[string]string),
-		}
-		c := jsonrpc.NewCodec(&buffer{r.Body})
-		if err = c.ReadHeader(&msg, codec.Request); err != nil {
+	/*
+		case strings.Contains(ct, "application/json-rpc"):
+			msg := codec.Message{
+				Type:   codec.Request,
+				Header: metadata.New(0),
+			}
+			c := jsonrpc.NewCodec(&buffer{r.Body})
+			if err = c.ReadHeader(&msg, codec.Request); err != nil {
+				return nil, err
+			}
+			var raw json.RawMessage
+			if err = c.ReadBody(&raw); err != nil {
+				return nil, err
+			}
+			return ([]byte)(raw), nil
+	*/
+	/*
+		case strings.Contains(ct, "application/proto-rpc"), strings.Contains(ct, "application/octet-stream"):
+			msg := codec.Message{
+				Type:   codec.Request,
+				Header: metadata.New(0),
+			}
+			c := protorpc.NewCodec(&buffer{r.Body})
+			if err = c.ReadHeader(&msg, codec.Request); err != nil {
+				return nil, err
+			}
+			var raw proto.Message
+			if err = c.ReadBody(&raw); err != nil {
+				return nil, err
+			}
+			return raw.Marshal()
+	*/
+	case strings.Contains(ct, "application/www-x-form-urlencoded"):
+		if err = r.ParseForm(); err != nil {
 			return nil, err
 		}
-		var raw json.RawMessage
-		if err = c.ReadBody(&raw); err != nil {
-			return nil, err
-		}
-		return ([]byte)(raw), nil
-	case strings.Contains(ct, "application/proto-rpc"), strings.Contains(ct, "application/octet-stream"):
-		msg := codec.Message{
-			Type:   codec.Request,
-			Header: make(map[string]string),
-		}
-		c := protorpc.NewCodec(&buffer{r.Body})
-		if err = c.ReadHeader(&msg, codec.Request); err != nil {
-			return nil, err
-		}
-		var raw proto.Message
-		if err = c.ReadBody(&raw); err != nil {
-			return nil, err
-		}
-		return raw.Marshal()
-	case strings.Contains(ct, "application/x-www-form-urlencoded"):
-		r.ParseForm()
 
 		// generate a new set of values from the form
-		vals := make(map[string]string)
+		vals := make(map[string]string, len(r.Form))
 		for k, v := range r.Form {
 			vals[k] = strings.Join(v, ",")
 		}
@@ -268,7 +277,7 @@ func requestPayload(r *http.Request) ([]byte, error) {
 	// dont user metadata.FromContext as it mangles names
 	md, ok := metadata.FromContext(ctx)
 	if !ok {
-		md = make(map[string]string)
+		md = metadata.New(0)
 	}
 
 	// allocate maximum
@@ -347,10 +356,10 @@ func requestPayload(r *http.Request) ([]byte, error) {
 	switch r.Method {
 	case "GET":
 		// empty response
-		if strings.Contains(ct, "application/json") && string(out) == "{}" {
-			return out, nil
-		} else if string(out) == "{}" && !strings.Contains(ct, "application/json") {
+		if string(out) == "{}" && !strings.Contains(ct, "application/json") {
 			return []byte{}, nil
+		} else if string(out) == "{}" && strings.Contains(ct, "application/json") {
+			return out, nil
 		}
 		return out, nil
 	case "PATCH", "POST", "PUT", "DELETE":
@@ -364,13 +373,6 @@ func requestPayload(r *http.Request) ([]byte, error) {
 			bodybuf = b
 		}
 		if bodydst == "" || bodydst == "*" {
-			// jsonpatch resequences the json object so we avoid it if possible (some usecases such as
-			// validating signatures require the request body to be unchangedd). We're keeping support
-			// for the custom paramaters for backwards compatability reasons.
-			if string(out) == "{}" {
-				return bodybuf, nil
-			}
-
 			if out, err = jsonpatch.MergeMergePatches(out, bodybuf); err == nil {
 				return out, nil
 			}
@@ -417,6 +419,7 @@ func requestPayload(r *http.Request) ([]byte, error) {
 
 		//fallback to previous unknown behaviour
 		return bodybuf, nil
+
 	}
 
 	return []byte{}, nil
@@ -450,8 +453,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 
 	_, werr := w.Write([]byte(ce.Error()))
 	if werr != nil {
-		if logger.V(logger.ErrorLevel, logger.DefaultLogger) {
-			logger.Error(werr)
+		if logger.V(logger.ErrorLevel) {
+			logger.Error(r.Context(), werr.Error())
 		}
 	}
 }
@@ -476,8 +479,8 @@ func writeResponse(w http.ResponseWriter, r *http.Request, rsp []byte) {
 	// write response
 	_, err := w.Write(rsp)
 	if err != nil {
-		if logger.V(logger.ErrorLevel, logger.DefaultLogger) {
-			logger.Error(err)
+		if logger.V(logger.ErrorLevel) {
+			logger.Error(r.Context(), err.Error())
 		}
 	}
 
