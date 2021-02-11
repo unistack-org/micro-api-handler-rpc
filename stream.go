@@ -165,7 +165,7 @@ func serveWebsocket(ctx context.Context, w http.ResponseWriter, r *http.Request,
 			}
 
 			// write the response
-			if err := wsutil.WriteServerMessage(rw, op, buf); err != nil {
+			if err = wsutil.WriteServerMessage(rw, op, buf); err != nil {
 				if logger.V(logger.ErrorLevel) {
 					logger.Error(ctx, err.Error())
 				}
