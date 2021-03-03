@@ -428,6 +428,9 @@ func requestPayload(r *http.Request) ([]byte, error) {
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	ce := errors.Parse(err.Error())
 
+	// response content type
+	w.Header().Set("Content-Type", "application/json")
+
 	switch ce.Code {
 	case 0:
 		// assuming it's totally screwed
@@ -439,9 +442,6 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		w.WriteHeader(int(ce.Code))
 	}
-
-	// response content type
-	w.Header().Set("Content-Type", "application/json")
 
 	// Set trailers
 	if strings.Contains(r.Header.Get("Content-Type"), "application/grpc") {
