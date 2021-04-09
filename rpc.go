@@ -149,7 +149,7 @@ func (h *rpcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			service.Name,
 			service.Endpoint.Name,
 			request,
-			client.WithContentType(ct),
+			client.RequestContentType(ct),
 		)
 
 		// make the call
@@ -180,7 +180,7 @@ func (h *rpcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			service.Name,
 			service.Endpoint.Name,
 			&request,
-			client.WithContentType(ct),
+			client.RequestContentType(ct),
 		)
 		// make the call
 		if err := c.Call(cx, req, &response, callOpts...); err != nil {

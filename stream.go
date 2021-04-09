@@ -117,8 +117,8 @@ func serveWebsocket(ctx context.Context, w http.ResponseWriter, r *http.Request,
 		service.Name,
 		service.Endpoint.Name,
 		request,
-		client.WithContentType(ct),
-		client.StreamingRequest(),
+		client.RequestContentType(ct),
+		client.StreamingRequest(true),
 	)
 
 	// create a new stream
